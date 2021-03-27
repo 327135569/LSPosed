@@ -124,6 +124,25 @@ namespace lspd {
         RegisterNativeAPI(env);
     }
 
+    void Context::InitLess(JNIEnv* env) {
+        InstallInlineHooks();
+        class_linker_class_ = (jclass) env->NewGlobalRef(
+                FindClassFromCurrentLoader(env, kClassLinkerClassName));
+        post_fixup_static_mid_ = JNI_GetStaticMethodID(env, class_linker_class_,
+                "onPostFixupStaticTrampolines",
+                "(Ljava/lang/Class;)V");
+
+        entry_class_ = (jclass) (env->NewGlobalRef(
+                FindClassFromLoader(env, GetCurrentClassLoader(), kEntryClassName)));
+
+        // RegisterLogger(env);
+        // RegisterResourcesHook(env);
+        RegisterArtClassLinker(env);
+        RegisterYahfa(env);
+        RegisterPendingHooks(env);
+        RegisterNativeAPI(env);
+    }
+
     jclass
     Context::FindClassFromLoader(JNIEnv *env, jobject class_loader, std::string_view class_name) {
         if (class_loader == nullptr) return nullptr;

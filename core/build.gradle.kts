@@ -24,7 +24,7 @@ import org.jetbrains.kotlin.daemon.common.toHexString
 import java.security.MessageDigest
 
 plugins {
-    id("com.android.application")
+    id("com.android.library")
     kotlin("android")
 }
 
@@ -83,7 +83,6 @@ android {
     }
 
     defaultConfig {
-        applicationId("org.lsposed.lspd")
         minSdkVersion(androidMinSdkVersion)
         targetSdkVersion(androidTargetSdkVersion)
         multiDexEnabled = false
@@ -147,7 +146,7 @@ android {
 
 afterEvaluate {
 
-    android.applicationVariants.forEach { variant ->
+    android.libraryVariants.forEach { variant ->
         val variantCapped = variant.name.capitalize()
         val variantLowered = variant.name.toLowerCase()
         val zipFileName = "$moduleName-$verName-$verCode-$variantLowered.zip"
