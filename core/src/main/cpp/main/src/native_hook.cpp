@@ -85,7 +85,8 @@ namespace lspd {
             InstallArtHooks(art_handle.Get());
         }
 
-        InstallNativeAPI();
+        // No support for the native module
+        // InstallNativeAPI();
     }
 
     void InstallArtHooks(void *art_handle) {

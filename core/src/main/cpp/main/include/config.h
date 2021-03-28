@@ -50,6 +50,7 @@ inline constexpr bool is64 = Is64();
 
     static constexpr auto kEntryClassName = "org.lsposed.lspd.core.Main"_tstr;
     static constexpr auto kClassLinkerClassName = "org.lsposed.lspd.nativebridge.ClassLinker"_tstr;
+    static constexpr auto kClassLinkerClassNameSlash = "org/lsposed/lspd/nativebridge/ClassLinker"_tstr;
     static constexpr auto kBridgeServiceClassName = "org.lsposed.lspd.service.BridgeService"_tstr;
     static constexpr auto kDexPath = "framework/lspd.dex"_tstr;
 

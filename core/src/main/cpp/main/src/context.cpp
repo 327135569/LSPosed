@@ -126,14 +126,16 @@ namespace lspd {
 
     void Context::InitLess(JNIEnv* env) {
         InstallInlineHooks();
-        class_linker_class_ = (jclass) env->NewGlobalRef(
-                FindClassFromCurrentLoader(env, kClassLinkerClassName));
+        auto cls = env->FindClass(kClassLinkerClassNameSlash.c_str());
+        class_linker_class_ = (jclass) env->NewGlobalRef(cls);
+        auto gclMethodId = env->GetMethodID(env->GetObjectClass(cls), "getClassLoader", "()Ljava/lang/ClassLoader;");
+        inject_class_loader_ = env->CallObjectMethod(cls, gclMethodId);
         post_fixup_static_mid_ = JNI_GetStaticMethodID(env, class_linker_class_,
                 "onPostFixupStaticTrampolines",
                 "(Ljava/lang/Class;)V");
 
-        entry_class_ = (jclass) (env->NewGlobalRef(
-                FindClassFromLoader(env, GetCurrentClassLoader(), kEntryClassName)));
+        // entry_class_ = (jclass) (env->NewGlobalRef(
+        //         FindClassFromLoader(env, GetCurrentClassLoader(), kEntryClassName)));
 
         // RegisterLogger(env);
         // RegisterResourcesHook(env);
