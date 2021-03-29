@@ -29,7 +29,7 @@ val androidSourceCompatibility: JavaVersion by rootProject.extra
 val androidTargetCompatibility: JavaVersion by rootProject.extra
 
 android {
-    compileSdkVersion(androidTargetSdkVersion)
+    compileSdkVersion(30)
     buildToolsVersion(androidBuildToolsVersion)
 
     defaultConfig {
