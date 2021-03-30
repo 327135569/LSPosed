@@ -419,7 +419,8 @@ public final class XposedInit {
         }
 
         boolean res = initModule(mcl, apk, callInitZygote);
-        res = res && initNativeModule(mcl, apk);
+        // No support for native module
+        // res = res && initNativeModule(mcl, apk);
         return res;
     }
 
