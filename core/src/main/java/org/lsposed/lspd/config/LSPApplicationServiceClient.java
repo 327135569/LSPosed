@@ -24,6 +24,8 @@ import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 
 import java.io.File;
+import java.util.Collections;
+import java.util.Map;
 
 import org.lsposed.lspd.service.ILSPApplicationService;
 import org.lsposed.lspd.util.Utils;
@@ -87,15 +89,16 @@ public class LSPApplicationServiceClient implements ILSPApplicationService {
     }
 
     @Override
-    public String[] getModulesList(String processName) {
+    public Map<String, String> getModulesList(String processName) {
         try {
+            //noinspection unchecked
             return service.getModulesList(processName);
         } catch (RemoteException | NullPointerException ignored) {
         }
-        return new String[0];
+        return Collections.emptyMap();
     }
 
-    public String[] getModulesList() {
+    public Map<String, String> getModulesList() {
         return getModulesList(processName);
     }
 
