@@ -51,6 +51,17 @@ public interface IActivityManager extends IInterface {
                                  IBinder resultTo, String resultWho, int requestCode, int flags,
                                  ProfilerInfo profilerInfo, Bundle options) throws RemoteException;
 
+    int startActivityAsUser(IApplicationThread caller, String callingPackage,
+                            Intent intent, String resolvedType, IBinder resultTo, String resultWho,
+                            int requestCode, int flags, ProfilerInfo profilerInfo,
+                            Bundle options, int userId) throws RemoteException;
+
+    @RequiresApi(30)
+    int startActivityAsUserWithFeature(IApplicationThread caller, String callingPackage,
+                                       String callingFeatureId, Intent intent, String resolvedType,
+                                       IBinder resultTo, String resultWho, int requestCode, int flags,
+                                       ProfilerInfo profilerInfo, Bundle options, int userId) throws RemoteException;
+
     void forceStopPackage(String packageName, int userId);
 
     abstract class Stub extends Binder implements IActivityManager {
