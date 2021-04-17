@@ -11,6 +11,7 @@ RIRU_VERSION_NAME=""
 RIRU_MODULE_API_VERSION=%%%RIRU_MODULE_API_VERSION%%%
 RIRU_MODULE_MIN_API_VERSION=%%%RIRU_MODULE_MIN_API_VERSION%%%
 RIRU_MODULE_MIN_RIRU_VERSION_NAME="%%%RIRU_MODULE_MIN_RIRU_VERSION_NAME%%%"
+RIRU_MODULE_DEBUG=%%RIRU_MODULE_DEBUG%%
 
 if [ "$MAGISK_VER_CODE" -ge 21000 ]; then
   MAGISK_CURRENT_RIRU_MODULE_PATH=$(magisk --path)/.magisk/modules/riru-core
@@ -39,7 +40,7 @@ check_riru_version() {
 
 # This function will be used when util_functions.sh not exists
 enforce_install_from_magisk_app() {
-  if $BOOTMOE; then
+  if $BOOTMODE; then
     ui_print "- Installing from Magisk app"
   else
     ui_print "*********************************************************"

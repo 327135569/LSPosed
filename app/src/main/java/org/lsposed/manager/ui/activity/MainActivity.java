@@ -21,6 +21,7 @@
 package org.lsposed.manager.ui.activity;
 
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.method.LinkMovementMethod;
@@ -32,6 +33,7 @@ import androidx.core.text.HtmlCompat;
 import com.bumptech.glide.Glide;
 import com.google.android.material.snackbar.Snackbar;
 
+import org.lsposed.manager.BuildConfig;
 import org.lsposed.manager.ConfigManager;
 import org.lsposed.manager.R;
 import org.lsposed.manager.databinding.ActivityMainBinding;
@@ -43,11 +45,10 @@ import org.lsposed.manager.util.GlideHelper;
 import org.lsposed.manager.util.ModuleUtil;
 import org.lsposed.manager.util.NavUtil;
 import org.lsposed.manager.util.chrome.LinkTransformationMethod;
+import org.lsposed.manager.util.holiday.HolidayHelper;
 
 import java.util.Locale;
 
-import name.mikanoshi.customiuizer.holidays.HolidayHelper;
-import name.mikanoshi.customiuizer.utils.Helpers;
 import rikka.core.res.ResourcesKt;
 
 public class MainActivity extends BaseActivity {
@@ -83,6 +84,7 @@ public class MainActivity extends BaseActivity {
             binding.translators.setMovementMethod(LinkMovementMethod.getInstance());
             binding.translators.setTransformationMethod(new LinkTransformationMethod(this));
             binding.translators.setText(HtmlCompat.fromHtml(getString(R.string.about_translators, getString(R.string.translators)), HtmlCompat.FROM_HTML_MODE_LEGACY));
+            binding.version.setText(String.format(Locale.US, "%s (%s)", BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
             new BlurBehindDialogBuilder(this)
                     .setView(binding.getRoot())
                     .show();
@@ -105,8 +107,14 @@ public class MainActivity extends BaseActivity {
                 binding.statusSummary.setText(R.string.selinux_policy_not_loaded_summary);
             } else {
                 binding.statusTitle.setText(R.string.activated);
-                if (Helpers.currentHoliday == Helpers.Holidays.LUNARNEWYEAR) {
-                    cardBackgroundColor = 0xfff05654;
+                HolidayHelper.CardColors cardColors = HolidayHelper.getHolidayColors();
+                if (cardColors.textColor != 0) {
+                    binding.statusIcon.setImageTintList(ColorStateList.valueOf(cardColors.textColor));
+                    binding.statusTitle.setTextColor(ColorStateList.valueOf(cardColors.textColor));
+                    binding.statusSummary.setTextColor(ColorStateList.valueOf(cardColors.textColor));
+                }
+                if (cardColors.backgroundColor != 0) {
+                    cardBackgroundColor = cardColors.backgroundColor;
                 } else {
                     cardBackgroundColor = ResourcesKt.resolveColor(getTheme(), R.attr.colorNormal);
                 }
@@ -156,7 +164,7 @@ public class MainActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        int moduleCount = ModuleUtil.getInstance().getEnabledModules().size();
+        int moduleCount = ModuleUtil.getInstance().getEnabledModulesCount();
         binding.modulesSummary.setText(getResources().getQuantityString(R.plurals.modules_enabled_count, moduleCount, moduleCount));
     }
 }
