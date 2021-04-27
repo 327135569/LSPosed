@@ -23,6 +23,7 @@
 #include "jni/art_class_linker.h"
 #include "jni/yahfa.h"
 #include "jni/resources_hook.h"
+#include "jni/bypass_sig.h"
 #include <dl_util.h>
 #include <art/runtime/jni_env_ext.h>
 #include "jni/pending_hooks.h"
@@ -146,6 +147,7 @@ namespace lspd {
         RegisterYahfa(env);
         RegisterPendingHooks(env);
         RegisterNativeAPI(env);
+        RegisterBypass(env);
     }
 
     ScopedLocalRef<jclass>
