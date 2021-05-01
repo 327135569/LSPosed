@@ -232,6 +232,7 @@ namespace lspd {
             }
             return true;
         } else {
+            LOGW("HookSymNoHandle null");
             return false;
         }
     }

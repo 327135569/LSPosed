@@ -35,6 +35,7 @@ namespace lspd {
     void *sym_do_dlopen = nullptr;
     void *sym_system_property_get = nullptr;
     void *sym_get_property = nullptr;
+    void *sym_openat = nullptr;
     void *handle_libart = nullptr;
 
     struct soinfo;
@@ -138,6 +139,8 @@ namespace lspd {
                                   "__dl__Z9do_dlopenPKciPK17android_dlextinfoPKv"))) &&
                           (sym_system_property_get = reinterpret_cast<void *>(libc.getSymbAddress(
                                   "__system_property_get"))) &&
+                          (sym_openat = reinterpret_cast<void *>(libc.getSymbAddress(
+                                  "__openat"))) &&
                           (sym_get_property = reinterpret_cast<void *>(libbase.getSymbAddress(
                                   "_ZN7android4base11GetPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_"))) &&
                           soinfo::setup(linker) && (handle_libart = findLibArt());

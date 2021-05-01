@@ -30,6 +30,7 @@ namespace lspd {
     extern void *sym_do_dlopen;
     extern void *sym_system_property_get;
     extern void *sym_get_property;
+    extern void *sym_openat;
     extern void *handle_libart;
 
     void InitSymbolCache();

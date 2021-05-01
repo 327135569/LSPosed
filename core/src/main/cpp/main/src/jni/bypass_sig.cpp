@@ -7,7 +7,8 @@
 #include "native_util.h"
 #include "jni_helper.h"
 #include "dl_util.h"
-
+#include "logging.h"
+#include "symbol_cache.h"
 
 namespace lspd {
 
@@ -18,20 +19,25 @@ namespace lspd {
     CREATE_HOOK_STUB_ENTRIES(
             "__openat",
             int, __openat,
-            (int fd, const char* pathname, int flag), {
+            (int fd, const char* pathname, int flag, int mode), {
         if (strstr(pathname, apkPathPre.c_str()) && strstr(pathname, "/base.apk")) {
-            return backup(fd, redirectPath.c_str(), flag);
+            return backup(fd, redirectPath.c_str(), flag, mode);
         }
-        return backup(fd, pathname, flag);
+        return backup(fd, pathname, flag, mode);
     });
 
     LSP_DEF_NATIVE_METHOD(void, SigBypass, enableOpenatHook, jstring packageName) {
-        ScopedDlHandle scopedDlHandle(kLibcPath.c_str());
-        lspd::HookSym(scopedDlHandle.Get(), __openat);
+        auto r = HookSymNoHandle(sym_openat, __openat);
+        if (!r) {
+            LOGE("Hook __openat fail");
+            return;
+        }
         JUTFString str(env, packageName);
         hookedPackageName = str.get();
         redirectPath = "/data/data/" + hookedPackageName + "/cache/lspatchapk.so";
         apkPathPre = "/data/app/" + hookedPackageName;
+        LOGD("redirectPath %s", redirectPath.c_str());
+        LOGD("apkPathPre %s", apkPathPre.c_str());
     }
 
     static JNINativeMethod gMethods[] = {
