@@ -61,8 +61,7 @@ namespace lspd {
             return;
         }
         LOGI("Using api level %d", api_level);
-        InstallRiruHooks();
-        // install ART hooks
+        // InstallRiruHooks();
         InstallArtHooks(handle_libart);
         // InstallNativeAPI();
     }
