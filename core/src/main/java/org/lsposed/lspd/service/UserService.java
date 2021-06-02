@@ -19,6 +19,8 @@
 
 package org.lsposed.lspd.service;
 
+import static org.lsposed.lspd.service.ServiceManager.TAG;
+
 import android.content.pm.UserInfo;
 import android.os.Build;
 import android.os.IBinder;
@@ -27,28 +29,29 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.util.Log;
 
+import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
-
-import static org.lsposed.lspd.service.ServiceManager.TAG;
 
 public class UserService {
     private static IUserManager um = null;
     private static IBinder binder = null;
+    private static IBinder.DeathRecipient recipient = new IBinder.DeathRecipient() {
+        @Override
+        public void binderDied() {
+            Log.w(TAG, "um is dead");
+            binder.unlinkToDeath(this, 0);
+            binder = null;
+            um = null;
+        }
+    };
 
     public static IUserManager getUserManager() {
         if (binder == null && um == null) {
             binder = ServiceManager.getService("user");
             if (binder == null) return null;
             try {
-                binder.linkToDeath(new IBinder.DeathRecipient() {
-                    @Override
-                    public void binderDied() {
-                        Log.w(TAG, "um is dead");
-                        binder.unlinkToDeath(this, 0);
-                        binder = null;
-                        um = null;
-                    }
-                }, 0);
+                binder.linkToDeath(recipient, 0);
             } catch (RemoteException e) {
                 Log.e(TAG, Log.getStackTraceString(e));
             }
@@ -57,10 +60,10 @@ public class UserService {
         return um;
     }
 
-    public static int[] getUsers() throws RemoteException {
+    public static List<UserInfo> getUsers() throws RemoteException {
         IUserManager um = getUserManager();
-        if (um == null) return new int[0];
-        List<UserInfo> users;
+        List<UserInfo> users = new LinkedList<>();
+        if (um == null) return users;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             users = um.getUsers(true, true, true);
         } else {
@@ -70,11 +73,14 @@ public class UserService {
                 users = um.getUsers(true, true, true);
             }
         }
-        int[] userArray = new int[users.size()];
-        for (int i = 0; i < users.size(); i++) {
-            UserInfo uh = users.get(i);
-            userArray[i] = uh.id;
-        }
-        return userArray;
+        return users;
+    }
+
+    public static int getProfileParent(int userId) throws RemoteException {
+        IUserManager um = getUserManager();
+        if (um == null) return -1;
+        var userInfo = um.getProfileParent(userId);
+        if (userInfo == null) return userId;
+        else return userInfo.id;
     }
 }

@@ -30,7 +30,6 @@
     public static void forkAndSpecializePost(java.lang.String, java.lang.String, android.os.IBinder);
     public static void main(java.lang.String[]);
 }
--keepnames class org.lsposed.lspd.hooker.HandleBindAppHooker
 -keepclasseswithmembers,includedescriptorclasses class * {
     native <methods>;
 }
@@ -41,12 +40,10 @@
     public static boolean execTransact(int, long, long, int);
     public static android.os.IBinder getApplicationServiceForSystemServer(android.os.IBinder, android.os.IBinder);
 }
--keepclasseswithmembers class org.lsposed.lspd.service.ConfigManager {
-    public static void main(java.lang.String[]);
-}
 -assumenosideeffects class android.util.Log {
     public static *** v(...);
     public static *** d(...);
 }
 -repackageclasses
 -allowaccessmodification
+-dontwarn org.slf4j.impl.StaticLoggerBinder

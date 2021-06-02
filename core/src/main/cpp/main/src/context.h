@@ -41,7 +41,7 @@ namespace lspd {
             return std::move(instance_);
         }
 
-        inline auto GetCurrentClassLoader() const { return inject_class_loader_; }
+        inline jobject GetCurrentClassLoader() const { return inject_class_loader_; }
 
         void CallOnPostFixupStaticTrampolines(void *class_ptr);
 
@@ -71,7 +71,7 @@ namespace lspd {
         jclass class_linker_class_ = nullptr;
         jmethodID post_fixup_static_mid_ = nullptr;
         bool skip_ = false;
-        std::vector<char> dex{};
+        std::vector<std::byte> dex{};
 
         Context() {}
 

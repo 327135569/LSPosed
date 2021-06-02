@@ -20,47 +20,51 @@
 
 package org.lsposed.lspd.core;
 
+import static org.lsposed.lspd.config.LSPApplicationServiceClient.serviceClient;
+
 import android.annotation.SuppressLint;
 import android.app.ActivityThread;
+import android.app.LoadedApk;
 import android.content.pm.ApplicationInfo;
 import android.content.res.CompatibilityInfo;
-import android.ddm.DdmHandleAppName;
 import android.os.Environment;
 import android.os.IBinder;
+import android.os.Process;
+
+import org.lsposed.lspd.config.LSPApplicationServiceClient;
+import org.lsposed.lspd.deopt.PrebuiltMethodsDeopter;
+import org.lsposed.lspd.hooker.CrashDumpHooker;
+import org.lsposed.lspd.hooker.HandleBindAppHooker;
+import org.lsposed.lspd.hooker.LoadedApkCstrHooker;
+import org.lsposed.lspd.hooker.StartBootstrapServicesHooker;
+import org.lsposed.lspd.hooker.SystemMainHooker;
+import org.lsposed.lspd.service.ServiceManager;
+import org.lsposed.lspd.util.ModuleLogger;
+import org.lsposed.lspd.util.Utils;
+import org.lsposed.lspd.util.Versions;
+import org.lsposed.lspd.yahfa.hooker.YahfaHooker;
 
 import java.io.File;
 
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.XposedInit;
-import org.lsposed.lspd.config.LSPApplicationServiceClient;
-import org.lsposed.lspd.deopt.PrebuiltMethodsDeopter;
-import org.lsposed.lspd.hooker.HandleBindAppHooker;
-import org.lsposed.lspd.hooker.LoadedApkCstrHooker;
-import org.lsposed.lspd.hooker.StartBootstrapServicesHooker;
-import org.lsposed.lspd.hooker.SystemMainHooker;
-import org.lsposed.lspd.nativebridge.ModuleLogger;
-import org.lsposed.lspd.service.ServiceManager;
-import org.lsposed.lspd.util.Utils;
-import org.lsposed.lspd.util.Versions;
-import org.lsposed.lspd.yahfa.hooker.YahfaHooker;
-
-import static org.lsposed.lspd.config.LSPApplicationServiceClient.serviceClient;
 
 @SuppressLint("DefaultLocale")
 public class Main {
     public static void startBootstrapHook(boolean isSystem, String appDataDir) {
         Utils.logD("startBootstrapHook starts: isSystem = " + isSystem);
-        ClassLoader classLoader = Main.class.getClassLoader();
+        XposedHelpers.findAndHookMethod(Thread.class, "dispatchUncaughtException",
+                Throwable.class, new CrashDumpHooker());
         if (isSystem) {
-            XposedHelpers.findAndHookMethod("android.app.ActivityThread", classLoader,
+            XposedHelpers.findAndHookMethod(ActivityThread.class,
                     "systemMain", new SystemMainHooker());
         }
-        XposedHelpers.findAndHookMethod("android.app.ActivityThread", classLoader,
+        XposedHelpers.findAndHookMethod(ActivityThread.class,
                 "handleBindApplication",
                 "android.app.ActivityThread$AppBindData",
                 new HandleBindAppHooker(appDataDir));
-        XposedHelpers.findAndHookConstructor("android.app.LoadedApk", classLoader,
+        XposedHelpers.findAndHookConstructor(LoadedApk.class,
                 ActivityThread.class, ApplicationInfo.class, CompatibilityInfo.class,
                 ClassLoader.class, boolean.class, boolean.class, boolean.class,
                 new LoadedApkCstrHooker());
@@ -75,23 +79,25 @@ public class Main {
                 SystemMainHooker.systemServerCL,
                 "startBootstrapServices", paramTypesAndCallback);
     }
+
     private static void installBootstrapHooks(boolean isSystem, String appDataDir) {
         // Initialize the Xposed framework
         try {
             startBootstrapHook(isSystem, appDataDir);
-            XposedInit.initForZygote();
+            XposedInit.hookResources();
         } catch (Throwable t) {
             Utils.logE("error during Xposed initialization", t);
         }
     }
 
-    private static void loadModulesSafely(boolean callInitZygote) {
+    private static void loadModulesSafely() {
         try {
-            XposedInit.loadModules(callInitZygote);
+            XposedInit.loadModules();
         } catch (Exception exception) {
             Utils.logE("error loading module list", exception);
         }
     }
+
     private static void forkPostCommon(boolean isSystem, String appDataDir, String niceName) {
         // init logger
         YahfaHooker.init();
@@ -100,8 +106,8 @@ public class Main {
         XposedInit.startsSystemServer = isSystem;
         PrebuiltMethodsDeopter.deoptBootMethods(); // do it once for secondary zygote
         installBootstrapHooks(isSystem, appDataDir);
-        Utils.logI("Loading modules for " + niceName);
-        loadModulesSafely(true);
+        Utils.logI("Loading modules for " + niceName + "/" + Process.myUid());
+        loadModulesSafely();
     }
 
     public static void forkAndSpecializePost(String appDataDir, String niceName, IBinder binder) {
@@ -116,11 +122,6 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        for (String arg : args) {
-            if (arg.equals("--debug")) {
-                DdmHandleAppName.setAppName("lspd", 0);
-            }
-        }
-        ServiceManager.start();
+        ServiceManager.start(args);
     }
 }

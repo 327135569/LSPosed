@@ -24,26 +24,37 @@ import android.annotation.SuppressLint;
 import android.app.Application;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
+
+import org.lsposed.hiddenapibypass.HiddenApiBypass;
+import org.lsposed.manager.repo.RepoLoader;
+import org.lsposed.manager.ui.activity.CrashReportActivity;
+import org.lsposed.manager.util.DoHDNS;
+import org.lsposed.manager.util.theme.ThemeUtil;
 
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Locale;
 
-import org.lsposed.manager.repo.RepoLoader;
-import org.lsposed.manager.ui.activity.CrashReportActivity;
-import org.lsposed.manager.util.DoHDNS;
-import org.lsposed.manager.util.theme.ThemeUtil;
 import okhttp3.Cache;
 import okhttp3.OkHttpClient;
 import okhttp3.logging.HttpLoggingInterceptor;
 import rikka.material.app.DayNightDelegate;
 
 public class App extends Application {
+
+    static {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // TODO: set specific class name instead of `L`
+            HiddenApiBypass.addHiddenApiExemptions("L");
+        }
+    }
+
     public static final String TAG = "LSPosedManager";
     @SuppressLint("StaticFieldLeak")
     private static App instance = null;
@@ -107,6 +118,11 @@ public class App extends Application {
     public static OkHttpClient getOkHttpClient() {
         if (okHttpClient == null) {
             OkHttpClient.Builder builder = new OkHttpClient.Builder().cache(getOkHttpCache());
+            builder.addInterceptor(chain -> {
+                var request = chain.request().newBuilder();
+                request.header("User-Agent", TAG);
+                return chain.proceed(request.build());
+            });
             HttpLoggingInterceptor.Logger logger = s -> Log.v(TAG, s);
             HttpLoggingInterceptor log = new HttpLoggingInterceptor(logger);
             log.setLevel(HttpLoggingInterceptor.Level.HEADERS);

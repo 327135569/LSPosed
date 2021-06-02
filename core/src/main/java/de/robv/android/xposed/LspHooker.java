@@ -20,20 +20,21 @@
 
 package de.robv.android.xposed;
 
+import java.lang.reflect.Executable;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 public class LspHooker {
     private final XposedBridge.AdditionalHookInfo additionalInfo;
-    private final Member method;
+    private final Executable method;
     private final Method backup;
 
-    public LspHooker(XposedBridge.AdditionalHookInfo info, Member origin, Method backup) {
+    public LspHooker(XposedBridge.AdditionalHookInfo info, Executable origin, Method backup) {
         this.additionalInfo = info;
         this.method = origin;
         this.backup = backup;
+        this.backup.setAccessible(true);
     }
 
     public Object invokeOriginalMethod(Object thisObject, Object[] args) throws InvocationTargetException, IllegalAccessException {
@@ -117,8 +118,15 @@ public class LspHooker {
         // return
         if (param.hasThrowable())
             throw param.getThrowable();
-        else
-            return param.getResult();
+        else {
+            var result = param.getResult();
+            if (method instanceof Method) {
+                var returnType = ((Method) method).getReturnType();
+                if (!returnType.isPrimitive())
+                    return returnType.cast(result);
+            }
+            return result;
+        }
     }
 
 }

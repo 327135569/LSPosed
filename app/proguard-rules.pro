@@ -1,7 +1,7 @@
 -keep class org.lsposed.manager.Constants {
     public static void showErrorToast(int);
 }
--keepclasseswithmembers class org.lsposed.manager.receivers.LSPosedManagerServiceClient {
+-keepclasseswithmembers class org.lsposed.manager.receivers.LSPManagerServiceClient {
     private static android.os.IBinder binder;
 }
 
@@ -31,8 +31,7 @@
 -dontwarn org.bouncycastle.jsse.BCSSLParameters
 -dontwarn org.bouncycastle.jsse.BCSSLSocket
 -dontwarn org.bouncycastle.jsse.provider.BouncyCastleJsseProvider
--dontwarn org.conscrypt.Conscrypt$Version
--dontwarn org.conscrypt.Conscrypt
+-dontwarn org.conscrypt.Conscrypt*
 -dontwarn org.conscrypt.ConscryptHostnameVerifier
 -dontwarn org.openjsse.javax.net.ssl.SSLParameters
 -dontwarn org.openjsse.javax.net.ssl.SSLSocket

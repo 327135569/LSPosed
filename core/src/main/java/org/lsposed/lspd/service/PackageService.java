@@ -33,6 +33,7 @@ import android.content.pm.IPackageManager;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.content.pm.VersionedPackage;
 import android.os.Build;
@@ -43,8 +44,10 @@ import android.os.ServiceManager;
 import android.util.Log;
 import android.util.Pair;
 
-import org.lsposed.lspd.Application;
+import androidx.annotation.NonNull;
+
 import org.lsposed.lspd.BuildConfig;
+import org.lsposed.lspd.models.Application;
 import org.lsposed.lspd.util.InstallerVerifier;
 import org.lsposed.lspd.utils.ParceledListSlice;
 
@@ -56,8 +59,10 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
@@ -65,23 +70,29 @@ import java.util.stream.Collectors;
 import hidden.HiddenApiBridge;
 
 public class PackageService {
+
+    static final int INSTALL_FAILED_INTERNAL_ERROR = -110;
+    static final int INSTALL_REASON_UNKNOWN = 0;
+
+
     private static IPackageManager pm = null;
     private static IBinder binder = null;
+    private static final IBinder.DeathRecipient recipient = new IBinder.DeathRecipient() {
+        @Override
+        public void binderDied() {
+            Log.w(TAG, "pm is dead");
+            binder.unlinkToDeath(this, 0);
+            binder = null;
+            pm = null;
+        }
+    };
 
     public static IPackageManager getPackageManager() {
         if (binder == null && pm == null) {
             binder = ServiceManager.getService("package");
             if (binder == null) return null;
             try {
-                binder.linkToDeath(new IBinder.DeathRecipient() {
-                    @Override
-                    public void binderDied() {
-                        Log.w(TAG, "pm is dead");
-                        binder.unlinkToDeath(this, 0);
-                        binder = null;
-                        pm = null;
-                    }
-                }, 0);
+                binder.linkToDeath(recipient, 0);
             } catch (RemoteException e) {
                 Log.e(TAG, Log.getStackTraceString(e));
             }
@@ -96,24 +107,30 @@ public class PackageService {
         return pm.getPackageInfo(packageName, flags, userId);
     }
 
+    public static @NonNull
+    Map<Integer, PackageInfo> getPackageInfoFromAllUsers(String packageName, int flags) throws RemoteException {
+        IPackageManager pm = getPackageManager();
+        Map<Integer, PackageInfo> res = new HashMap<>();
+        if (pm == null) return res;
+        for (var user : UserService.getUsers()) {
+            var info = pm.getPackageInfo(packageName, flags, user.id);
+            if (info != null && info.applicationInfo != null) res.put(user.id, info);
+        }
+        return res;
+    }
+
     public static ApplicationInfo getApplicationInfo(String packageName, int flags, int userId) throws RemoteException {
         IPackageManager pm = getPackageManager();
         if (pm == null) return null;
         return pm.getApplicationInfo(packageName, flags, userId);
     }
 
-    public static String[] getPackagesForUid(int uid) throws RemoteException {
-        IPackageManager pm = getPackageManager();
-        if (pm == null) return new String[0];
-        return pm.getPackagesForUid(uid);
-    }
-
     public static ParceledListSlice<PackageInfo> getInstalledPackagesFromAllUsers(int flags, boolean filterNoProcess) throws RemoteException {
         List<PackageInfo> res = new ArrayList<>();
         IPackageManager pm = getPackageManager();
         if (pm == null) return ParceledListSlice.emptyList();
-        for (int userId : UserService.getUsers()) {
-            res.addAll(pm.getInstalledPackages(flags, userId).getList());
+        for (var user : UserService.getUsers()) {
+            res.addAll(pm.getInstalledPackages(flags, user.id).getList());
         }
         if (filterNoProcess) {
             res = res.stream().filter(packageInfo -> {
@@ -220,10 +237,11 @@ public class PackageService {
         }
     }
 
-    public static boolean uninstallPackage(VersionedPackage versionedPackage) throws RemoteException, InterruptedException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+    public static boolean uninstallPackage(VersionedPackage versionedPackage, int userId) throws RemoteException, InterruptedException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
         CountDownLatch latch = new CountDownLatch(1);
         final boolean[] result = {false};
-        pm.getPackageInstaller().uninstall(versionedPackage, null, 0x00000002, new IntentSenderAdaptor() {
+        var flag = userId == -1 ? 0x00000002 : 0; //PackageManager.DELETE_ALL_USERS = 0x00000002; UserHandle ALL = new UserHandle(-1);
+        pm.getPackageInstaller().uninstall(versionedPackage, null, flag, new IntentSenderAdaptor() {
             @Override
             public void send(Intent intent) {
                 int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
@@ -231,9 +249,26 @@ public class PackageService {
                 Log.d(TAG, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE));
                 latch.countDown();
             }
-        }.getIntentSender(), 0);
+        }.getIntentSender(), userId == -1 ? 0 : userId);
         latch.await();
         return result[0];
+    }
+
+    public static int installExistingPackageAsUser(String packageName, int userId) throws RemoteException {
+        IPackageManager pm = getPackageManager();
+        Log.d(TAG, "about to install existing package " + packageName + "/" + userId);
+        if (pm == null) return INSTALL_FAILED_INTERNAL_ERROR;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return pm.installExistingPackageAsUser(packageName, userId, 0, INSTALL_REASON_UNKNOWN, null);
+        } else {
+            return pm.installExistingPackageAsUser(packageName, userId, 0, INSTALL_REASON_UNKNOWN);
+        }
+    }
+
+    public static ParceledListSlice<ResolveInfo> queryIntentActivities(android.content.Intent intent, java.lang.String resolvedType, int flags, int userId) throws RemoteException {
+        IPackageManager pm = getPackageManager();
+        if (pm == null) return null;
+        return new ParceledListSlice<>(pm.queryIntentActivities(intent, resolvedType, flags, userId).getList());
     }
 
     @SuppressWarnings("JavaReflectionMemberAccess")
@@ -253,25 +288,29 @@ public class PackageService {
                 if (versionMatch && signatureMatch && pkgInfo.versionCode >= BuildConfig.VERSION_CODE)
                     return false;
                 if (!signatureMatch || !versionMatch && pkgInfo.versionCode > BuildConfig.VERSION_CODE)
-                    uninstallPackage(new VersionedPackage(pkgInfo.packageName, pkgInfo.versionCode));
+                    uninstallPackage(new VersionedPackage(pkgInfo.packageName, pkgInfo.versionCode), -1);
             }
 
             // Install manager
             IPackageInstaller installerService = pm.getPackageInstaller();
-            PackageInstaller installer;
+            PackageInstaller installer = null;
             // S Preview
             if (Build.VERSION.SDK_INT > 30 || Build.VERSION.SDK_INT == 30 && Build.VERSION.PREVIEW_SDK_INT != 0) {
-                Constructor<PackageInstaller> installerConstructor = PackageInstaller.class.getConstructor(IPackageInstaller.class, String.class, String.class, int.class);
-                installerConstructor.setAccessible(true);
-                installer = installerConstructor.newInstance(installerService, null, null, 0);
-            } else {
+                try {
+                    Constructor<PackageInstaller> installerConstructor = PackageInstaller.class.getConstructor(IPackageInstaller.class, String.class, String.class, int.class);
+                    installerConstructor.setAccessible(true);
+                    installer = installerConstructor.newInstance(installerService, null, null, 0);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (installer == null) {
                 Constructor<PackageInstaller> installerConstructor = PackageInstaller.class.getConstructor(IPackageInstaller.class, String.class, int.class);
                 installerConstructor.setAccessible(true);
                 installer = installerConstructor.newInstance(installerService, null, 0);
             }
             PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
             int installFlags = HiddenApiBridge.PackageInstaller_SessionParams_installFlags(params);
-            installFlags |= 0x00000004/*PackageManager.INSTALL_ALLOW_TEST*/ | 0x00000002/*PackageManager.INSTALL_REPLACE_EXISTING*/;
+            installFlags |= 0x00000002/*PackageManager.INSTALL_REPLACE_EXISTING*/;
             HiddenApiBridge.PackageInstaller_SessionParams_installFlags(params, installFlags);
 
             int sessionId = installer.createSession(params);
@@ -300,4 +339,5 @@ public class PackageService {
             return false;
         }
     }
+
 }

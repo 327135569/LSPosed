@@ -19,9 +19,13 @@
 
 package org.lsposed.lspd.service;
 
-import android.content.BroadcastReceiver;
+import static org.lsposed.lspd.service.ServiceManager.TAG;
+import static hidden.HiddenApiBridge.Binder_allowBlocking;
+import static hidden.HiddenApiBridge.Context_getActivityToken;
+
+import android.app.ActivityThread;
+import android.app.IApplicationThread;
 import android.content.Context;
-import android.content.Intent;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.Parcel;
@@ -45,9 +49,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Map;
 
-import static hidden.HiddenApiBridge.Binder_allowBlocking;
-import static org.lsposed.lspd.service.ServiceManager.TAG;
-
 public class BridgeService {
     private static final int TRANSACTION_CODE = ('_' << 24) | ('L' << 16) | ('S' << 8) | 'P';
     private static final String DESCRIPTOR = "LSPosed";
@@ -64,13 +65,8 @@ public class BridgeService {
     private static ILSPosedService service = null;
 
     // for service
-    static class BridgeServiceDeathRecipient implements IBinder.DeathRecipient {
-        private final IBinder bridgeService;
-
-        BridgeServiceDeathRecipient(IBinder bridgeService) throws RemoteException {
-            this.bridgeService = bridgeService;
-            bridgeService.linkToDeath(this, 0);
-        }
+    private static IBinder bridgeService;
+    private static final IBinder.DeathRecipient bridgeRecipient = new IBinder.DeathRecipient() {
 
         @Override
         public void binderDied() {
@@ -96,16 +92,21 @@ public class BridgeService {
             }
 
             bridgeService.unlinkToDeath(this, 0);
+            bridgeService = null;
             listener.onSystemServerDied();
             sendToBridge(serviceBinder, true);
         }
-    }
+    };
 
     // for client
-    private static final IBinder.DeathRecipient LSPSERVICE_DEATH_RECIPIENT = () -> {
-        serviceBinder = null;
-        service = null;
-        Log.e(TAG, "service is dead");
+    private static final IBinder.DeathRecipient serviceRecipient = new IBinder.DeathRecipient() {
+        @Override
+        public void binderDied() {
+            serviceBinder.unlinkToDeath(this, 0);
+            serviceBinder = null;
+            service = null;
+            Log.e(TAG, "service is dead");
+        }
     };
 
     public interface Listener {
@@ -121,7 +122,6 @@ public class BridgeService {
 
     // For service
     private static void sendToBridge(IBinder binder, boolean isRestart) {
-        IBinder bridgeService;
         do {
             bridgeService = ServiceManager.getService(SERVICE_NAME);
             if (bridgeService != null && bridgeService.pingBinder()) {
@@ -143,7 +143,7 @@ public class BridgeService {
         }
 
         try {
-            new BridgeServiceDeathRecipient(bridgeService);
+            bridgeService.linkToDeath(bridgeRecipient, 0);
         } catch (Throwable e) {
             Log.w(TAG, "linkToDeath " + Log.getStackTraceString(e));
             sendToBridge(binder, false);
@@ -191,42 +191,26 @@ public class BridgeService {
             return;
         }
 
-        if (serviceBinder == null) {
-            PackageReceiver.register(new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    if (service == null) {
-                        Log.e(TAG, "Service is dead, missing package changed: " + intent);
-                        return;
-                    }
-                    try {
-                        service.dispatchPackageChanged(intent);
-                    } catch (RemoteException e) {
-                        Log.e(TAG, Log.getStackTraceString(e));
-                    }
-                }
-            });
-            BootReceiver.register(new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    try {
-                        service.dispatchBootCompleted(intent);
-                    } catch (RemoteException e) {
-                        Log.e(TAG, Log.getStackTraceString(e));
-                    }
-                }
-            });
-        } else {
-            serviceBinder.unlinkToDeath(LSPSERVICE_DEATH_RECIPIENT, 0);
+        var token = Binder.clearCallingIdentity();
+        if (serviceBinder != null) {
+            serviceBinder.unlinkToDeath(serviceRecipient, 0);
         }
+        Binder.restoreCallingIdentity(token);
 
         serviceBinder = Binder_allowBlocking(binder);
         service = ILSPosedService.Stub.asInterface(serviceBinder);
         try {
-            serviceBinder.linkToDeath(LSPSERVICE_DEATH_RECIPIENT, 0);
-        } catch (RemoteException ignored) {
+            serviceBinder.linkToDeath(serviceRecipient, 0);
+        } catch (Throwable e) {
+            Log.e(TAG, "service link to death: ", e);
         }
-
+        try {
+            IApplicationThread at = ActivityThread.currentActivityThread().getApplicationThread();
+            Context ct = ActivityThread.currentActivityThread().getSystemContext();
+            service.dispatchSystemServerContext(at.asBinder(), Context_getActivityToken(ct));
+        } catch (Throwable e) {
+            Log.e(TAG, "dispatch context: ", e);
+        }
         Log.i(TAG, "binder received");
     }
 
@@ -322,8 +306,8 @@ public class BridgeService {
     public static IBinder getApplicationServiceForSystemServer(IBinder binder, IBinder heartBeat) {
         if (binder == null || heartBeat == null) return null;
         try {
-            ILSPosedService service = ILSPosedService.Stub.asInterface(binder);
-            ILSPApplicationService applicationService = service.requestApplicationService(Process.myUid(), Process.myPid(), "android", heartBeat);
+            var service = ILSPSystemServerService.Stub.asInterface(binder);
+            var applicationService = service.requestApplicationService(Process.myUid(), Process.myPid(), "android", heartBeat);
             if (applicationService != null) return applicationService.asBinder();
         } catch (Throwable e) {
             Log.e(TAG, Log.getStackTraceString(e));

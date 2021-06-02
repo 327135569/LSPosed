@@ -20,18 +20,24 @@
 package org.lsposed.lspd.service;
 
 import android.content.Context;
-import android.os.Build;
+import android.ddm.DdmHandleAppName;
 import android.os.IBinder;
+import android.os.IServiceManager;
 import android.os.Looper;
 import android.util.Log;
 
+import com.android.internal.os.BinderInternal;
+
 import org.lsposed.lspd.BuildConfig;
+
+import hidden.HiddenApiBridge;
 
 public class ServiceManager {
     private static LSPosedService mainService = null;
     private static LSPModuleService moduleService = null;
     private static LSPApplicationService applicationService = null;
     private static LSPManagerService managerService = null;
+    private static LSPSystemServerService systemServerService = null;
     public static final String TAG = "LSPosedService";
 
     private static void waitSystemService(String name) {
@@ -45,26 +51,40 @@ public class ServiceManager {
         }
     }
 
-    private static void putBinderForSystemServer() {
-        android.os.ServiceManager.addService("serial", mainService);
+    public static IServiceManager getSystemServiceManager() {
+        return IServiceManager.Stub.asInterface(HiddenApiBridge.Binder_allowBlocking(BinderInternal.getContextObject()));
     }
 
     // call by ourselves
-    public static void start() {
+    public static void start(String[] args) {
+        if (!ConfigManager.getInstance().tryLock()) System.exit(0);
+
+        for (String arg : args) {
+            if (arg.equals("--debug")) {
+                DdmHandleAppName.setAppName("lspd", 0);
+            }
+            if (arg.equals("--from-service")) {
+                Log.w(TAG, "LSPosed daemon is not started properly. Try for a late start...");
+            }
+        }
         Log.i(TAG, "starting server...");
-        Log.i(TAG, String.format("version %s (%s)", BuildConfig.VERSION_NAME, BuildConfig.VERSION_NAME));
+        Log.i(TAG, String.format("version %s (%s)", BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
 
         Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
-            Log.e(TAG, Log.getStackTraceString(e));
+            Log.e(TAG, "Uncaught exception", e);
+            System.exit(1);
         });
 
-        Looper.prepare();
+        Looper.prepareMainLooper();
         mainService = new LSPosedService();
         moduleService = new LSPModuleService();
         applicationService = new LSPApplicationService();
         managerService = new LSPManagerService();
+        systemServerService = new LSPSystemServerService();
 
-        putBinderForSystemServer();
+        systemServerService.putBinderForSystemServer();
+
+        android.os.Process.killProcess(android.system.Os.getppid());
 
         waitSystemService("package");
         waitSystemService("activity");
@@ -89,7 +109,7 @@ public class ServiceManager {
             @Override
             public void onSystemServerDied() {
                 Log.w(TAG, "system server died");
-                putBinderForSystemServer();
+                systemServerService.putBinderForSystemServer();
             }
         });
 
@@ -128,4 +148,7 @@ public class ServiceManager {
         return managerService;
     }
 
+    public static boolean systemServerRequested() {
+        return systemServerService.systemServerRequested();
+    }
 }
