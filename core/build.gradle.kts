@@ -113,6 +113,8 @@ android {
 
         buildConfigField("int", "API_CODE", "$apiCode")
         buildConfigField("String", "DEFAULT_MANAGER_PACKAGE_NAME", "\"$defaultManagerPackageName\"")
+        buildConfigField("int", "VERSION_CODE", "$verCode")
+        buildConfigField("String", "VERSION_NAME", "\"$verName\"")
     }
 
     lint {
