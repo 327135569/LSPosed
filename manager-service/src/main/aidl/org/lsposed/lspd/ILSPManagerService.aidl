@@ -1,7 +1,8 @@
 package org.lsposed.lspd;
 
 import org.lsposed.lspd.utils.ParceledListSlice;
-import org.lsposed.lspd.Application;
+import org.lsposed.lspd.models.UserInfo;
+import org.lsposed.lspd.models.Application;
 
 
 interface ILSPManagerService {
@@ -25,8 +26,6 @@ interface ILSPManagerService {
 
     void setVerboseLog(boolean enabled) = 12;
 
-    boolean isPermissive() = 15;
-
     ParcelFileDescriptor getVerboseLog() = 16;
 
     ParcelFileDescriptor getModulesLog() = 17;
@@ -45,7 +44,17 @@ interface ILSPManagerService {
 
     void reboot(boolean confirm, String reason, boolean wait) = 24;
 
-    boolean uninstallPackage(String packageName) = 25;
+    boolean uninstallPackage(String packageName, int userId) = 25;
 
     boolean isSepolicyLoaded() = 26;
+
+    List<UserInfo> getUsers() = 27;
+
+    int installExistingPackageAsUser(String packageName, int userId) = 28;
+
+    boolean systemServerRequested() = 29;
+
+    int startActivityAsUserWithFeature(in Intent intent,  int userId) = 30;
+
+    ParceledListSlice<ResolveInfo> queryIntentActivitiesAsUser(in Intent intent, int flags, int userId) = 31;
 }

@@ -20,7 +20,10 @@
 
 package org.lsposed.manager.adapters;
 
+import static android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS;
+
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
@@ -29,17 +32,18 @@ import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Build;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Message;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
-import android.view.LayoutInflater;
+import android.util.Log;
 import android.view.Menu;
-import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
@@ -53,6 +57,8 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.widget.SearchView;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.request.target.CustomTarget;
@@ -60,43 +66,51 @@ import com.bumptech.glide.request.transition.Transition;
 import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.snackbar.Snackbar;
 
+import org.lsposed.lspd.models.Application;
+import org.lsposed.manager.App;
+import org.lsposed.manager.BuildConfig;
+import org.lsposed.manager.ConfigManager;
+import org.lsposed.manager.R;
+import org.lsposed.manager.databinding.ItemModuleBinding;
+import org.lsposed.manager.ui.fragment.AppListFragment;
+import org.lsposed.manager.ui.fragment.CompileDialogFragment;
+import org.lsposed.manager.util.GlideApp;
+import org.lsposed.manager.util.ModuleUtil;
+
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
-import org.lsposed.lspd.Application;
-import org.lsposed.manager.App;
-import org.lsposed.manager.BuildConfig;
-import org.lsposed.manager.ConfigManager;
-import org.lsposed.manager.R;
-import org.lsposed.manager.ui.activity.AppListActivity;
-import org.lsposed.manager.ui.fragment.CompileDialogFragment;
-import org.lsposed.manager.util.GlideApp;
-import org.lsposed.manager.util.ModuleUtil;
 import rikka.core.res.ResourcesKt;
 import rikka.widget.switchbar.SwitchBar;
 
-import static android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS;
-
 @SuppressLint("NotifyDataSetChanged")
-public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> implements Filterable {
+public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> implements Filterable, Handler.Callback {
 
-    private final AppListActivity activity;
+    private final Activity activity;
+    private final AppListFragment fragment;
     private final PackageManager pm;
     private final SharedPreferences preferences;
-    private final String modulePackageName;
-    private final String moduleName;
+    private final Handler loadAppListHandler;
+    private final ModuleUtil moduleUtil;
+
+    private final ModuleUtil.InstalledModule module;
+
     private final HashSet<ApplicationWithEquals> recommendedList = new HashSet<>();
     private final HashSet<ApplicationWithEquals> checkedList = new HashSet<>();
-    private final List<AppInfo> searchList = new ArrayList<>();
+    private final ConcurrentLinkedQueue<AppInfo> searchList = new ConcurrentLinkedQueue<>();
+    private final List<AppInfo> showList = new ArrayList<>();
+
     private final SwitchBar.OnCheckedChangeListener switchBarOnCheckedChangeListener = new SwitchBar.OnCheckedChangeListener() {
         @Override
         public boolean onCheckedChanged(SwitchBar view, boolean isChecked) {
-            if (!ModuleUtil.getInstance().setModuleEnabled(modulePackageName, isChecked)) {
+            if (!moduleUtil.setModuleEnabled(module.packageName, isChecked)) {
                 return false;
             }
             enabled = isChecked;
@@ -104,97 +118,54 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
             return true;
         }
     };
-    private List<AppInfo> showList = new ArrayList<>();
+    private final Runnable dataReadyRunnable = new Runnable() {
+        @Override
+        public void run() {
+            synchronized (this) {
+                fragment.binding.progress.setIndeterminate(false);
+                fragment.binding.swipeRefreshLayout.setRefreshing(false);
+                String queryStr = fragment.searchView != null ? fragment.searchView.getQuery().toString() : "";
+                getFilter().filter(queryStr);
+                this.notify();
+            }
+        }
+    };
+
     private ApplicationInfo selectedInfo;
     private boolean refreshing = false;
     private boolean enabled = true;
 
-    public ScopeAdapter(AppListActivity activity, String moduleName, String modulePackageName) {
-        this.activity = activity;
-        this.moduleName = moduleName;
-        this.modulePackageName = modulePackageName;
+    public ScopeAdapter(AppListFragment fragment, ModuleUtil.InstalledModule module) {
+        this.fragment = fragment;
+        this.activity = fragment.requireActivity();
+        this.module = module;
+        moduleUtil = ModuleUtil.getInstance();
+        HandlerThread handlerThread = new HandlerThread("appList");
+        handlerThread.start();
+        loadAppListHandler = new Handler(handlerThread.getLooper(), this);
         preferences = App.getPreferences();
         pm = activity.getPackageManager();
-        refresh(false);
     }
 
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View v = LayoutInflater.from(activity).inflate(R.layout.item_module, parent, false);
-        return new ViewHolder(v);
-    }
-
-    private void loadApps(boolean force) {
-        List<PackageInfo> appList = AppHelper.getAppList(force);
-        checkedList.clear();
-        recommendedList.clear();
-        searchList.clear();
-        showList.clear();
-
-        checkedList.addAll(ConfigManager.getModuleScope(modulePackageName));
-        HashSet<ApplicationWithEquals> installedList = new HashSet<>();
-        List<String> scopeList = ModuleUtil.getInstance().getModule(modulePackageName).getScopeList();
-        boolean emptyCheckedList = checkedList.isEmpty();
-        for (PackageInfo info : appList) {
-            int uid = info.applicationInfo.uid;
-            if (info.packageName.equals("android") && uid / 100000 != 0) {
-                continue;
-            }
-
-            ApplicationWithEquals application = new ApplicationWithEquals(info.packageName, uid / 100000);
-
-            installedList.add(application);
-
-            if (scopeList != null && scopeList.contains(info.packageName)) {
-                recommendedList.add(application);
-                if (emptyCheckedList) {
-                    checkedList.add(application);
-                }
-            }
-
-            if (shouldHideApp(info, application)) {
-                continue;
-            }
-
-            AppInfo appInfo = new AppInfo();
-            appInfo.packageInfo = info;
-            appInfo.label = getAppLabel(info.applicationInfo, pm);
-            appInfo.application = application;
-            appInfo.packageName = info.packageName;
-            appInfo.applicationInfo = info.applicationInfo;
-            searchList.add(appInfo);
-        }
-        checkedList.retainAll(installedList);
-        if (emptyCheckedList) {
-            ConfigManager.setModuleScope(modulePackageName, checkedList);
-        }
-        showList = sortApps(searchList);
-        synchronized (this) {
-            refreshing = false;
-        }
-        activity.onDataReady();
+        return new ViewHolder(ItemModuleBinding.inflate(activity.getLayoutInflater(), parent, false));
     }
 
     private boolean shouldHideApp(PackageInfo info, ApplicationWithEquals app) {
-        if (info.packageName.equals(this.modulePackageName)) {
-            return true;
-        }
-        if (info.packageName.equals(BuildConfig.APPLICATION_ID)) {
-            return true;
-        }
         if (info.packageName.equals("android")) {
             return false;
         }
         if (checkedList.contains(app)) {
             return false;
         }
-        if (!preferences.getBoolean("show_modules", false)) {
-            if (info.applicationInfo.metaData != null && info.applicationInfo.metaData.containsKey("xposedmodule")) {
+        if (preferences.getBoolean("filter_modules", true)) {
+            if (info.applicationInfo.metaData != null && info.applicationInfo.metaData.containsKey("xposedminversion")) {
                 return true;
             }
         }
-        if (!preferences.getBoolean("show_games", false)) {
+        if (preferences.getBoolean("filter_games", true)) {
             if (info.applicationInfo.category == ApplicationInfo.CATEGORY_GAME) {
                 return true;
             }
@@ -206,10 +177,10 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         if ((info.applicationInfo.flags & ApplicationInfo.FLAG_HAS_CODE) == 0) {
             return true;
         }
-        return !preferences.getBoolean("show_system_apps", false) && (info.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+        return preferences.getBoolean("filter_system_apps", true) && (info.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
     }
 
-    private List<AppInfo> sortApps(List<AppInfo> list) {
+    private void sortApps(List<AppInfo> list) {
         Comparator<PackageInfo> comparator = AppHelper.getAppListComparator(preferences.getInt("list_sort", 0), pm);
         Comparator<AppInfo> frameworkComparator = (a, b) -> {
             if (a.packageName.equals("android") == b.packageName.equals("android")) {
@@ -242,13 +213,12 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
                 return 1;
             }
         });
-        return list;
     }
 
     private void checkRecommended() {
         checkedList.clear();
         checkedList.addAll(recommendedList);
-        ConfigManager.setModuleScope(modulePackageName, checkedList);
+        ConfigManager.setModuleScope(module.packageName, checkedList);
     }
 
     public boolean onOptionsItemSelected(MenuItem item) {
@@ -256,7 +226,6 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         if (itemId == R.id.use_recommended) {
             if (!checkedList.isEmpty()) {
                 new AlertDialog.Builder(activity)
-                        .setTitle(R.string.use_recommended)
                         .setMessage(R.string.use_recommended_message)
                         .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                             checkRecommended();
@@ -269,34 +238,34 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
                 notifyDataSetChanged();
             }
             return true;
-        } else if (itemId == R.id.item_show_system) {
+        } else if (itemId == R.id.item_filter_system) {
             item.setChecked(!item.isChecked());
-            preferences.edit().putBoolean("show_system_apps", item.isChecked()).apply();
-        } else if (itemId == R.id.item_show_games) {
+            preferences.edit().putBoolean("filter_system_apps", item.isChecked()).apply();
+        } else if (itemId == R.id.item_filter_games) {
             item.setChecked(!item.isChecked());
-            preferences.edit().putBoolean("show_games", item.isChecked()).apply();
-        } else if (itemId == R.id.item_show_modules) {
+            preferences.edit().putBoolean("filter_games", item.isChecked()).apply();
+        } else if (itemId == R.id.item_filter_modules) {
             item.setChecked(!item.isChecked());
-            preferences.edit().putBoolean("show_modules", item.isChecked()).apply();
+            preferences.edit().putBoolean("filter_modules", item.isChecked()).apply();
         } else if (itemId == R.id.menu_launch) {
-            Intent launchIntent = AppHelper.getSettingsIntent(modulePackageName, pm);
+            Intent launchIntent = AppHelper.getSettingsIntent(module.packageName, module.userId);
             if (launchIntent != null) {
-                activity.startActivity(launchIntent);
+                ConfigManager.startActivityAsUserWithFeature(launchIntent, module.userId);
             } else {
-                activity.makeSnackBar(R.string.module_no_ui, Snackbar.LENGTH_LONG);
+                fragment.makeSnackBar(R.string.module_no_ui, Snackbar.LENGTH_LONG);
             }
             return true;
         } else if (itemId == R.id.backup) {
             Calendar now = Calendar.getInstance();
-            activity.backupLauncher.launch(String.format(Locale.US,
+            fragment.backupLauncher.launch(String.format(Locale.US,
                     "%s_%04d%02d%02d_%02d%02d%02d.lsp",
-                    moduleName,
+                    module.getAppName(),
                     now.get(Calendar.YEAR), now.get(Calendar.MONTH) + 1,
                     now.get(Calendar.DAY_OF_MONTH), now.get(Calendar.HOUR_OF_DAY),
                     now.get(Calendar.MINUTE), now.get(Calendar.SECOND)));
             return true;
         } else if (itemId == R.id.restore) {
-            activity.restoreLauncher.launch(new String[]{"*/*"});
+            fragment.restoreLauncher.launch(new String[]{"*/*"});
             return true;
         } else if (!AppHelper.onOptionsItemSelected(item, preferences)) {
             return false;
@@ -312,23 +281,19 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         }
         int itemId = item.getItemId();
         if (itemId == R.id.menu_launch) {
-            Intent launchIntent = pm.getLaunchIntentForPackage(info.packageName);
+            Intent launchIntent = AppHelper.getLaunchIntentForPackage(info.packageName, info.uid / 100000);
             if (launchIntent != null) {
-                activity.startActivity(launchIntent);
+                ConfigManager.startActivityAsUserWithFeature(launchIntent, module.userId);
             }
         } else if (itemId == R.id.menu_compile_speed) {
-            CompileDialogFragment.speed(activity.getSupportFragmentManager(), info);
-        } else if (itemId == R.id.menu_app_store) {
-            Uri uri = Uri.parse("market://details?id=" + info.packageName);
-            Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+            CompileDialogFragment.speed(fragment.getChildFragmentManager(), info);
+        } else if (itemId == R.id.menu_other_app) {
+            var intent = new Intent(Intent.ACTION_SHOW_APP_INFO);
+            intent.putExtra(Intent.EXTRA_PACKAGE_NAME, module.packageName);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            try {
-                activity.startActivity(intent);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            ConfigManager.startActivityAsUserWithFeature(intent, module.userId);
         } else if (itemId == R.id.menu_app_info) {
-            activity.startActivity(new Intent(ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", info.packageName, null)));
+            ConfigManager.startActivityAsUserWithFeature(new Intent(ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", info.packageName, null)), module.userId);
         } else if (itemId == R.id.menu_force_stop) {
             if (info.packageName.equals("android")) {
                 ConfigManager.reboot(false, null, false);
@@ -346,19 +311,18 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         return true;
     }
 
-    public void onCreateOptionsMenu(@NonNull Menu menu, @NonNull MenuInflater inflater) {
-        inflater.inflate(R.menu.menu_app_list, menu);
-        Intent intent = AppHelper.getSettingsIntent(modulePackageName, pm);
+    public void onPrepareOptionsMenu(@NonNull Menu menu) {
+        Intent intent = AppHelper.getSettingsIntent(module.packageName, module.userId);
         if (intent == null) {
             menu.removeItem(R.id.menu_launch);
         }
-        List<String> scopeList = ModuleUtil.getInstance().getModule(modulePackageName).getScopeList();
+        List<String> scopeList = module.getScopeList();
         if (scopeList == null || scopeList.isEmpty()) {
             menu.removeItem(R.id.use_recommended);
         }
-        menu.findItem(R.id.item_show_system).setChecked(preferences.getBoolean("show_system_apps", false));
-        menu.findItem(R.id.item_show_games).setChecked(preferences.getBoolean("show_games", false));
-        menu.findItem(R.id.item_show_modules).setChecked(preferences.getBoolean("show_modules", false));
+        menu.findItem(R.id.item_filter_system).setChecked(preferences.getBoolean("filter_system_apps", true));
+        menu.findItem(R.id.item_filter_games).setChecked(preferences.getBoolean("filter_games", true));
+        menu.findItem(R.id.item_filter_modules).setChecked(preferences.getBoolean("filter_modules", true));
         switch (preferences.getInt("list_sort", 0)) {
             case 7:
                 menu.findItem(R.id.item_sort_by_update_time_reverse).setChecked(true);
@@ -394,11 +358,7 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         boolean android = appInfo.packageName.equals("android");
         CharSequence appName;
         int userId = appInfo.applicationInfo.uid / 100000;
-        if (userId != 0) {
-            appName = String.format("%s (%s)", appInfo.label, userId);
-        } else {
-            appName = android ? activity.getString(R.string.android_framework) : appInfo.label;
-        }
+        appName = android ? activity.getString(R.string.android_framework) : appInfo.label;
         holder.appName.setText(appName);
         GlideApp.with(holder.appIcon)
                 .load(appInfo.packageInfo)
@@ -440,18 +400,14 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
 
         holder.itemView.setOnCreateContextMenuListener((menu, v, menuInfo) -> {
             activity.getMenuInflater().inflate(R.menu.menu_app_item, menu);
-            Intent launchIntent = pm.getLaunchIntentForPackage(appInfo.packageName);
+            menu.setHeaderTitle(appName);
+            Intent launchIntent = AppHelper.getLaunchIntentForPackage(appInfo.packageName, userId);
             if (launchIntent == null) {
                 menu.removeItem(R.id.menu_launch);
-            }
-            if (userId != 0) {
-                menu.removeItem(R.id.menu_launch);
-                menu.removeItem(R.id.menu_app_info);
             }
             if (android) {
                 menu.findItem(R.id.menu_force_stop).setTitle(R.string.reboot);
                 menu.removeItem(R.id.menu_compile_speed);
-                menu.removeItem(R.id.menu_app_store);
             }
         });
 
@@ -491,14 +447,17 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
             }
             refreshing = true;
         }
-        activity.binding.progress.setVisibility(View.INVISIBLE);
-        activity.binding.progress.setIndeterminate(true);
-        activity.binding.progress.setVisibility(View.VISIBLE);
-        enabled = ModuleUtil.getInstance().isModuleEnabled(modulePackageName);
-        activity.binding.masterSwitch.setOnCheckedChangeListener(null);
-        activity.binding.masterSwitch.setChecked(enabled);
-        activity.binding.masterSwitch.setOnCheckedChangeListener(switchBarOnCheckedChangeListener);
-        AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> loadApps(force));
+        loadAppListHandler.removeMessages(0);
+        if (!force) {
+            fragment.binding.progress.setVisibility(View.INVISIBLE);
+            fragment.binding.progress.setIndeterminate(true);
+            fragment.binding.progress.setVisibility(View.VISIBLE);
+        }
+        enabled = moduleUtil.isModuleEnabled(module.packageName);
+        fragment.binding.masterSwitch.setOnCheckedChangeListener(null);
+        fragment.binding.masterSwitch.setChecked(enabled);
+        fragment.binding.masterSwitch.setOnCheckedChangeListener(switchBarOnCheckedChangeListener);
+        loadAppListHandler.sendMessage(Message.obtain(loadAppListHandler, 0, force));
     }
 
     protected void onCheckedChange(CompoundButton buttonView, boolean isChecked, AppInfo appInfo) {
@@ -507,8 +466,8 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         } else {
             checkedList.remove(appInfo.application);
         }
-        if (!ConfigManager.setModuleScope(modulePackageName, checkedList)) {
-            activity.makeSnackBar(R.string.failed_to_save_scope_list, Snackbar.LENGTH_SHORT);
+        if (!ConfigManager.setModuleScope(module.packageName, checkedList)) {
+            fragment.makeSnackBar(R.string.failed_to_save_scope_list, Snackbar.LENGTH_SHORT);
             if (!isChecked) {
                 checkedList.add(appInfo.application);
             } else {
@@ -516,27 +475,95 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
             }
             buttonView.setChecked(!isChecked);
         } else if (appInfo.packageName.equals("android")) {
-            Snackbar.make(activity.binding.snackbar, R.string.reboot_required, Snackbar.LENGTH_SHORT)
+            Snackbar.make(fragment.binding.snackbar, R.string.reboot_required, Snackbar.LENGTH_SHORT)
                     .setAction(R.string.reboot, v -> ConfigManager.reboot(false, null, false))
                     .show();
         }
     }
 
-    static class ViewHolder extends RecyclerView.ViewHolder {
+    @Override
+    public boolean handleMessage(@NonNull Message msg) {
+        if (msg.what != 0) {
+            return false;
+        }
+        try {
+            List<PackageInfo> appList = AppHelper.getAppList((Boolean) msg.obj);
+            checkedList.clear();
+            recommendedList.clear();
+            var tmpList = new ArrayList<AppInfo>();
+            checkedList.addAll(ConfigManager.getModuleScope(module.packageName));
+            HashSet<ApplicationWithEquals> installedList = new HashSet<>();
+            List<String> scopeList = module.getScopeList();
+            boolean emptyCheckedList = checkedList.isEmpty();
+            for (PackageInfo info : appList) {
+                int userId = info.applicationInfo.uid / 100000;
+                String packageName = info.packageName;
+                if (packageName.equals("android") && userId != 0 ||
+                        packageName.equals(module.packageName) ||
+                        packageName.equals(BuildConfig.APPLICATION_ID)) {
+                    continue;
+                }
 
-        View root;
+                ApplicationWithEquals application = new ApplicationWithEquals(packageName, userId);
+
+                installedList.add(application);
+
+                if (userId != module.userId) {
+                    continue;
+                }
+
+                if (scopeList != null && scopeList.contains(packageName)) {
+                    recommendedList.add(application);
+                    if (emptyCheckedList) {
+                        checkedList.add(application);
+                    }
+                } else if (shouldHideApp(info, application)) {
+                    continue;
+                }
+
+                AppInfo appInfo = new AppInfo();
+                appInfo.packageInfo = info;
+                appInfo.label = info.applicationInfo.loadLabel(pm);
+                appInfo.application = application;
+                appInfo.packageName = info.packageName;
+                appInfo.applicationInfo = info.applicationInfo;
+                tmpList.add(appInfo);
+            }
+            checkedList.retainAll(installedList);
+            if (emptyCheckedList) {
+                ConfigManager.setModuleScope(module.packageName, checkedList);
+            }
+            sortApps(tmpList);
+            searchList.clear();
+            searchList.addAll(tmpList);
+            synchronized (dataReadyRunnable) {
+                synchronized (this) {
+                    refreshing = false;
+                }
+                activity.runOnUiThread(dataReadyRunnable);
+                dataReadyRunnable.wait();
+            }
+            return true;
+        } catch (Exception e) {
+            Log.e(App.TAG, Log.getStackTraceString(e));
+            return false;
+        }
+    }
+
+    static class ViewHolder extends RecyclerView.ViewHolder {
+        ConstraintLayout root;
         ImageView appIcon;
         TextView appName;
         TextView appDescription;
         MaterialCheckBox checkbox;
 
-        ViewHolder(View itemView) {
-            super(itemView);
-            root = itemView.findViewById(R.id.item_root);
-            appIcon = itemView.findViewById(R.id.app_icon);
-            appName = itemView.findViewById(R.id.app_name);
-            appDescription = itemView.findViewById(R.id.description);
-            checkbox = itemView.findViewById(R.id.checkbox);
+        ViewHolder(ItemModuleBinding binding) {
+            super(binding.getRoot());
+            root = binding.itemRoot;
+            appIcon = binding.appIcon;
+            appName = binding.appName;
+            appDescription = binding.description;
+            checkbox = binding.checkbox;
             checkbox.setVisibility(View.VISIBLE);
         }
     }
@@ -549,10 +576,11 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
 
         @Override
         protected FilterResults performFiltering(CharSequence constraint) {
+            FilterResults filterResults = new FilterResults();
+            List<AppInfo> filtered = new ArrayList<>();
             if (constraint.toString().isEmpty()) {
-                showList = searchList;
+                filtered.addAll(searchList);
             } else {
-                ArrayList<AppInfo> filtered = new ArrayList<>();
                 String filter = constraint.toString().toLowerCase();
                 for (AppInfo info : searchList) {
                     if (lowercaseContains(info.label.toString(), filter)
@@ -560,21 +588,40 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
                         filtered.add(info);
                     }
                 }
-                showList = filtered;
             }
-            return null;
+            filterResults.values = filtered;
+            filterResults.count = filtered.size();
+            return filterResults;
         }
 
         @Override
         protected void publishResults(CharSequence constraint, FilterResults results) {
+            showList.clear();
+            //noinspection unchecked
+            showList.addAll((Collection<AppInfo>) results.values);
             notifyDataSetChanged();
         }
     }
 
+    public SearchView.OnQueryTextListener getSearchListener() {
+        return new SearchView.OnQueryTextListener() {
+            @Override
+            public boolean onQueryTextSubmit(String query) {
+                refresh(false);
+                return true;
+            }
+
+            @Override
+            public boolean onQueryTextChange(String newText) {
+                refresh(false);
+                return true;
+            }
+        };
+    }
+
     public boolean onBackPressed() {
-        if (activity.binding.masterSwitch.isChecked() && checkedList.isEmpty()) {
+        if (!refreshing && fragment.binding.masterSwitch.isChecked() && checkedList.isEmpty()) {
             AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-            builder.setTitle(R.string.use_recommended);
             builder.setMessage(!recommendedList.isEmpty() ? R.string.no_scope_selected_has_recommended : R.string.no_scope_selected);
             if (!recommendedList.isEmpty()) {
                 builder.setPositiveButton(android.R.string.ok, (dialog, which) -> {
@@ -585,8 +632,8 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
                 builder.setPositiveButton(android.R.string.cancel, null);
             }
             builder.setNegativeButton(!recommendedList.isEmpty() ? android.R.string.cancel : android.R.string.ok, (dialog, which) -> {
-                ModuleUtil.getInstance().setModuleEnabled(modulePackageName, false);
-                Toast.makeText(activity, activity.getString(R.string.module_disabled_no_selection, moduleName), Toast.LENGTH_LONG).show();
+                moduleUtil.setModuleEnabled(module.packageName, false);
+                Toast.makeText(activity, activity.getString(R.string.module_disabled_no_selection, module.getAppName()), Toast.LENGTH_LONG).show();
                 activity.finish();
             });
             builder.show();
@@ -594,10 +641,6 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         } else {
             return true;
         }
-    }
-
-    public static String getAppLabel(ApplicationInfo info, PackageManager pm) {
-        return info.loadLabel(pm).toString();
     }
 
     public static class AppInfo {

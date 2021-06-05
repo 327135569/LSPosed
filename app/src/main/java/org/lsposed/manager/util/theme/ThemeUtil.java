@@ -21,15 +21,17 @@ package org.lsposed.manager.util.theme;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Build;
 
 import androidx.annotation.ColorRes;
 import androidx.annotation.StyleRes;
 
+import org.lsposed.manager.App;
+import org.lsposed.manager.R;
+
 import java.util.HashMap;
 import java.util.Map;
 
-import org.lsposed.manager.App;
-import org.lsposed.manager.R;
 import rikka.core.util.ResourceUtils;
 import rikka.material.app.DayNightDelegate;
 
@@ -72,6 +74,10 @@ public class ThemeUtil {
         return preferences.getBoolean("black_dark_theme", false);
     }
 
+    private static boolean isSystemAccent() {
+        return preferences.getBoolean("follow_system_accent", true);
+    }
+
     public static String getNightTheme(Context context) {
         if (isBlackNightTheme()
                 && ResourceUtils.isNightMode(context.getResources().getConfiguration()))
@@ -92,6 +98,9 @@ public class ThemeUtil {
     }
 
     public static String getColorTheme() {
+        if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.S || Build.VERSION.SDK_INT == Build.VERSION_CODES.R && Build.VERSION.PREVIEW_SDK_INT != 0) && isSystemAccent()) {
+            return "system";
+        }
         String primaryColorEntryName = "COLOR_PRIMARY";
         String colorPrimary = preferences.getString("theme_color", "COLOR_PRIMARY");
         for (CustomThemeColors color : CustomThemeColors.values()) {
@@ -104,6 +113,9 @@ public class ThemeUtil {
 
     @StyleRes
     public static int getColorThemeStyleRes() {
+        if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.S || Build.VERSION.SDK_INT == Build.VERSION_CODES.R && Build.VERSION.PREVIEW_SDK_INT != 0) && isSystemAccent()) {
+            return R.style.ThemeOverlay_system;
+        }
         Integer theme = colorThemeMap.get(getColorTheme());
         if (theme == null) {
             return R.style.ThemeOverlay_color_primary;

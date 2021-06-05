@@ -23,34 +23,34 @@ import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 
-import java.io.File;
-
 import org.lsposed.lspd.service.ILSPApplicationService;
 import org.lsposed.lspd.util.Utils;
+
+import java.util.Collections;
+import java.util.Map;
 
 public class LSPApplicationServiceClient implements ILSPApplicationService {
     static ILSPApplicationService service = null;
     static IBinder serviceBinder = null;
 
-    static String baseCachePath = null;
     static String processName = null;
 
     public static LSPApplicationServiceClient serviceClient = null;
+    private static final IBinder.DeathRecipient recipient = new IBinder.DeathRecipient() {
+        @Override
+        public void binderDied() {
+            serviceBinder.unlinkToDeath(this, 0);
+            serviceBinder = null;
+            service = null;
+        }
+    };
 
     public static void Init(IBinder binder, String niceName) {
         if (serviceClient == null && binder != null && serviceBinder == null && service == null) {
             serviceBinder = binder;
             processName = niceName;
             try {
-                serviceBinder.linkToDeath(
-                        new IBinder.DeathRecipient() {
-                            @Override
-                            public void binderDied() {
-                                serviceBinder.unlinkToDeath(this, 0);
-                                serviceBinder = null;
-                                service = null;
-                            }
-                        }, 0);
+                serviceBinder.linkToDeath(recipient, 0);
             } catch (RemoteException e) {
                 Utils.logE("link to death error: ", e);
             }
@@ -69,9 +69,9 @@ public class LSPApplicationServiceClient implements ILSPApplicationService {
     }
 
     @Override
-    public IBinder requestManagerBinder() {
+    public IBinder requestManagerBinder(String packageName) {
         try {
-            return service.requestManagerBinder();
+            return service.requestManagerBinder(packageName);
         } catch (RemoteException | NullPointerException ignored) {
         }
         return null;
@@ -87,15 +87,16 @@ public class LSPApplicationServiceClient implements ILSPApplicationService {
     }
 
     @Override
-    public String[] getModulesList(String processName) {
+    public Map<String, String> getModulesList(String processName) {
         try {
+            //noinspection unchecked
             return service.getModulesList(processName);
         } catch (RemoteException | NullPointerException ignored) {
         }
-        return new String[0];
+        return Collections.emptyMap();
     }
 
-    public String[] getModulesList() {
+    public Map<String, String> getModulesList() {
         return getModulesList(processName);
     }
 
@@ -103,17 +104,6 @@ public class LSPApplicationServiceClient implements ILSPApplicationService {
     public String getPrefsPath(String packageName) {
         try {
             return service.getPrefsPath(packageName);
-        } catch (RemoteException | NullPointerException ignored) {
-        }
-        return null;
-    }
-
-    @Override
-    public String getCachePath(String fileName) {
-        try {
-            if (baseCachePath == null)
-                baseCachePath = service.getCachePath("");
-            return baseCachePath + File.separator + fileName;
         } catch (RemoteException | NullPointerException ignored) {
         }
         return null;

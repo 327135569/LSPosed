@@ -27,12 +27,13 @@ import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.core.text.HtmlCompat;
 
-import java.util.Locale;
-
 import org.lsposed.manager.BuildConfig;
 import org.lsposed.manager.ConfigManager;
 import org.lsposed.manager.R;
 import org.lsposed.manager.databinding.DialogInfoBinding;
+
+import java.util.Locale;
+
 import rikka.core.util.ClipboardUtils;
 
 public class InfoDialogBuilder extends BlurBehindDialogBuilder {
@@ -54,12 +55,12 @@ public class InfoDialogBuilder extends BlurBehindDialogBuilder {
         binding.device.setText(getDevice());
         binding.systemAbi.setText(Build.SUPPORTED_ABIS[0]);
 
-        if (ConfigManager.isPermissive()) {
-            binding.selinux.setVisibility(View.VISIBLE);
-            binding.selinux.setText(HtmlCompat.fromHtml(context.getString(R.string.selinux_permissive), HtmlCompat.FROM_HTML_MODE_LEGACY));
-        } else if (!ConfigManager.isSepolicyLoaded()) {
-            binding.selinux.setVisibility(View.VISIBLE);
-            binding.selinux.setText(HtmlCompat.fromHtml(context.getString(R.string.selinux_policy_not_loaded), HtmlCompat.FROM_HTML_MODE_LEGACY));
+        if (!ConfigManager.isSepolicyLoaded()) {
+            binding.note.setVisibility(View.VISIBLE);
+            binding.note.setText(HtmlCompat.fromHtml(context.getString(R.string.selinux_policy_not_loaded), HtmlCompat.FROM_HTML_MODE_LEGACY));
+        } else if (!ConfigManager.systemServerRequested()) {
+            binding.note.setVisibility(View.VISIBLE);
+            binding.note.setText(HtmlCompat.fromHtml(context.getString(R.string.system_inject_fail), HtmlCompat.FROM_HTML_MODE_LEGACY));
         }
 
         setView(binding.getRoot());

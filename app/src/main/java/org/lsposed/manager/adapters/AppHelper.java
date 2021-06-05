@@ -28,36 +28,60 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.view.MenuItem;
 
+import org.lsposed.manager.ConfigManager;
+import org.lsposed.manager.R;
+
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-import org.lsposed.manager.ConfigManager;
-import org.lsposed.manager.R;
-
 public class AppHelper {
 
     public static final String SETTINGS_CATEGORY = "de.robv.android.xposed.category.MODULE_SETTINGS";
+    public static final int FLAG_SHOW_FOR_ALL_USERS = 0x0400;
     private static List<PackageInfo> appList;
 
-    public static Intent getSettingsIntent(String packageName, PackageManager packageManager) {
-        // taken from
-        // ApplicationPackageManager.getLaunchIntentForPackage(String)
-        // first looks for an Xposed-specific category, falls back to
-        // getLaunchIntentForPackage
-
+    public static Intent getSettingsIntent(String packageName, int userId) {
         Intent intentToResolve = new Intent(Intent.ACTION_MAIN);
         intentToResolve.addCategory(SETTINGS_CATEGORY);
         intentToResolve.setPackage(packageName);
-        List<ResolveInfo> ris = packageManager.queryIntentActivities(intentToResolve, 0);
+
+        List<ResolveInfo> ris = ConfigManager.queryIntentActivitiesAsUser(intentToResolve, 0, userId);
 
         if (ris.size() <= 0) {
-            return packageManager.getLaunchIntentForPackage(packageName);
+            return getLaunchIntentForPackage(packageName, userId);
         }
 
         Intent intent = new Intent(intentToResolve);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.setClassName(ris.get(0).activityInfo.packageName, ris.get(0).activityInfo.name);
+        intent.setClassName(ris.get(0).activityInfo.packageName,
+                ris.get(0).activityInfo.name);
+        intent.putExtra("lsp_no_switch_to_user", (ris.get(0).activityInfo.flags & FLAG_SHOW_FOR_ALL_USERS) != 0);
+        return intent;
+    }
+
+    public static Intent getLaunchIntentForPackage(String packageName, int userId) {
+        Intent intentToResolve = new Intent(Intent.ACTION_MAIN);
+        intentToResolve.addCategory(Intent.CATEGORY_INFO);
+        intentToResolve.setPackage(packageName);
+        List<ResolveInfo> ris = ConfigManager.queryIntentActivitiesAsUser(intentToResolve, 0, userId);
+
+        if (ris.size() <= 0) {
+            intentToResolve.removeCategory(Intent.CATEGORY_INFO);
+            intentToResolve.addCategory(Intent.CATEGORY_LAUNCHER);
+            intentToResolve.setPackage(packageName);
+            ris = ConfigManager.queryIntentActivitiesAsUser(intentToResolve, 0, userId);
+        }
+
+        if (ris.size() <= 0) {
+            return null;
+        }
+
+        Intent intent = new Intent(intentToResolve);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.setClassName(ris.get(0).activityInfo.packageName,
+                ris.get(0).activityInfo.name);
+        intent.putExtra("lsp_no_switch_to_user", (ris.get(0).activityInfo.flags & FLAG_SHOW_FOR_ALL_USERS) != 0);
         return intent;
     }
 

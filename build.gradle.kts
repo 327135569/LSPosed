@@ -23,11 +23,9 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        maven("https://storage.googleapis.com/r8-releases/raw")
     }
     dependencies {
-        classpath("com.android.tools:r8:3.0.32-dev")
-        classpath("com.android.tools.build:gradle:7.0.0-alpha13")
+        classpath("com.android.tools.build:gradle:7.0.0-beta03")
         classpath("org.eclipse.jgit:org.eclipse.jgit:5.10.0.202012080955-r")
         classpath(kotlin("gradle-plugin", version = "1.4.32"))
     }
@@ -39,16 +37,15 @@ val commitCount = Git(repo).log().add(refId).call().count()
 
 val defaultManagerPackageName by extra("org.lsposed.manager")
 val verCode by extra(commitCount + 4200)
-val verName by extra("v1.3.4")
+val verName by extra("v1.4.4")
 val androidTargetSdkVersion by extra(30)
 val androidMinSdkVersion by extra(27)
 val androidBuildToolsVersion by extra("30.0.3")
-val androidCompileSdkVersion by extra(30)
+val androidCompileSdkVersion by extra("android-S")
 val androidCompileNdkVersion by extra("22.1.7171670")
 val androidSourceCompatibility by extra(JavaVersion.VERSION_11)
 val androidTargetCompatibility by extra(JavaVersion.VERSION_11)
 val apiCode by extra(93)
-val zipPathMagiskReleasePath by extra(project(":core").projectDir.path + "/build/tmp/release/magisk/")
 
 allprojects {
     repositories {

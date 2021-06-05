@@ -29,7 +29,7 @@ import android.content.Intent;
 import androidx.core.app.NotificationCompat;
 
 import org.lsposed.manager.R;
-import org.lsposed.manager.ui.activity.AppListActivity;
+import org.lsposed.manager.ui.activity.MainActivity;
 
 public final class NotificationUtil {
 
@@ -38,7 +38,7 @@ public final class NotificationUtil {
     private static final int PENDING_INTENT_OPEN_APP_LIST = 0;
     private static final String NOTIFICATION_MODULES_CHANNEL = "modules_channel_2";
 
-    public static void showNotification(Context context, String modulePackageName, String moduleName, boolean enabled) {
+    public static void showNotification(Context context, String modulePackageName, String moduleName, int moduleUserId, boolean enabled) {
         NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
 
         NotificationChannel channel = new NotificationChannel(NOTIFICATION_MODULES_CHANNEL,
@@ -51,9 +51,9 @@ public final class NotificationUtil {
         String title = context.getString(enabled ? R.string.xposed_module_updated_notification_title : R.string.module_is_not_activated_yet);
         String content = context.getString(enabled ? R.string.xposed_module_updated_notification_content : R.string.module_is_not_activated_yet_detailed, moduleName);
 
-        Intent intent = new Intent(context, AppListActivity.class)
+        Intent intent = new Intent(context, MainActivity.class)
                 .putExtra("modulePackageName", modulePackageName)
-                .putExtra("moduleName", moduleName)
+                .putExtra("moduleUserId", moduleUserId)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
         PendingIntent contentIntent = PendingIntent.getActivity(context, PENDING_INTENT_OPEN_APP_LIST, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -65,7 +65,7 @@ public final class NotificationUtil {
                 .setContentTitle(title)
                 .setContentText(content)
                 .setAutoCancel(true)
-                .setSmallIcon(R.drawable.ic_notification)
+                .setSmallIcon(R.drawable.ic_extension)
                 .setColor(context.getColor(R.color.color_primary))
                 .setContentIntent(contentIntent)
                 .setStyle(style);
