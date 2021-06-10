@@ -122,6 +122,9 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         @Override
         public void run() {
             synchronized (this) {
+                if (fragment == null || fragment.binding == null) {
+                    return;
+                }
                 fragment.binding.progress.setIndeterminate(false);
                 fragment.binding.swipeRefreshLayout.setRefreshing(false);
                 String queryStr = fragment.searchView != null ? fragment.searchView.getQuery().toString() : "";
@@ -216,7 +219,7 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
     }
 
     private void checkRecommended() {
-        checkedList.clear();
+        checkedList.removeIf(i -> i.userId == module.userId);
         checkedList.addAll(recommendedList);
         ConfigManager.setModuleScope(module.packageName, checkedList);
     }
@@ -619,7 +622,7 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
         };
     }
 
-    public boolean onBackPressed() {
+    public void onBackPressed() {
         if (!refreshing && fragment.binding.masterSwitch.isChecked() && checkedList.isEmpty()) {
             AlertDialog.Builder builder = new AlertDialog.Builder(activity);
             builder.setMessage(!recommendedList.isEmpty() ? R.string.no_scope_selected_has_recommended : R.string.no_scope_selected);
@@ -634,12 +637,11 @@ public class ScopeAdapter extends RecyclerView.Adapter<ScopeAdapter.ViewHolder> 
             builder.setNegativeButton(!recommendedList.isEmpty() ? android.R.string.cancel : android.R.string.ok, (dialog, which) -> {
                 moduleUtil.setModuleEnabled(module.packageName, false);
                 Toast.makeText(activity, activity.getString(R.string.module_disabled_no_selection, module.getAppName()), Toast.LENGTH_LONG).show();
-                activity.finish();
+                fragment.getNavController().navigateUp();
             });
             builder.show();
-            return false;
         } else {
-            return true;
+            fragment.getNavController().navigateUp();
         }
     }
 

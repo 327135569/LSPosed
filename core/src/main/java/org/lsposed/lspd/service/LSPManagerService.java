@@ -32,6 +32,7 @@ import android.content.pm.VersionedPackage;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
+import android.os.SystemProperties;
 import android.util.Log;
 
 import org.lsposed.lspd.BuildConfig;
@@ -49,6 +50,9 @@ import de.robv.android.xposed.XposedBridge;
 public class LSPManagerService extends ILSPManagerService.Stub {
 
     public Object guard = null;
+
+    private static final String PROP_NAME = "dalvik.vm.dex2oat-flags";
+    private static final String PROP_VALUE = "--inline-max-code-units=0";
 
     public class ManagerGuard implements IBinder.DeathRecipient {
         private final IBinder binder;
@@ -118,7 +122,7 @@ public class LSPManagerService extends ILSPManagerService.Stub {
 
     @Override
     public boolean enableModule(String packageName) throws RemoteException {
-        PackageInfo pkgInfo = PackageService.getPackageInfo(packageName, 0, 0);
+        PackageInfo pkgInfo = PackageService.getPackageInfo(packageName, PackageService.MATCH_ALL_FLAGS, 0);
         if (pkgInfo == null) return false;
         return ConfigManager.getInstance().enableModule(packageName, pkgInfo.applicationInfo.sourceDir);
     }
@@ -203,14 +207,14 @@ public class LSPManagerService extends ILSPManagerService.Stub {
     }
 
     @Override
-    public boolean isSepolicyLoaded() throws RemoteException {
+    public boolean isSepolicyLoaded() {
         return ConfigManager.getInstance().isSepolicyLoaded();
     }
 
     @Override
     public List<UserInfo> getUsers() throws RemoteException {
         var users = new LinkedList<UserInfo>();
-        for(var user: UserService.getUsers()){
+        for (var user : UserService.getUsers()) {
             var info = new UserInfo();
             info.id = user.id;
             info.name = user.name;
@@ -252,5 +256,13 @@ public class LSPManagerService extends ILSPManagerService.Stub {
     @Override
     public ParceledListSlice<ResolveInfo> queryIntentActivitiesAsUser(Intent intent, int flags, int userId) throws RemoteException {
         return PackageService.queryIntentActivities(intent, intent.getType(), flags, userId);
+    }
+
+    @Override
+    public boolean dex2oatFlagsLoaded() {
+//        var splitFlags = new ArrayList<>(Arrays.asList(flags.split(" ")));
+//        splitFlags.add(PROP_VALUE);
+//        SystemProperties.set(PROP_NAME, String.join(" ", splitFlags));
+        return SystemProperties.get(PROP_NAME).contains(PROP_VALUE);
     }
 }
