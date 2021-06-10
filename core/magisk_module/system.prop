@@ -1,3 +1,1 @@
 dalvik.vm.dex2oat-flags=--inline-max-code-units=0
-dalvik.vm.usejitprofiles=false
-dalvik.vm.usejit=false
