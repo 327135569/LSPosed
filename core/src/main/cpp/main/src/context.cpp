@@ -130,7 +130,7 @@ namespace lspd {
         auto cls = env->FindClass(kClassLinkerClassNameSlash.c_str());
         class_linker_class_ = (jclass) env->NewGlobalRef(cls);
         auto gclMethodId = env->GetMethodID(env->GetObjectClass(cls), "getClassLoader", "()Ljava/lang/ClassLoader;");
-        inject_class_loader_ = env->CallObjectMethod(cls, gclMethodId);
+        inject_class_loader_ = env->NewGlobalRef(env->CallObjectMethod(cls, gclMethodId));
         post_fixup_static_mid_ = JNI_GetStaticMethodID(env, class_linker_class_,
                 "onPostFixupStaticTrampolines",
                 "(Ljava/lang/Class;)V");
